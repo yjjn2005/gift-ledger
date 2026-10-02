@@ -55,6 +55,13 @@ function applyOperation(state,op,actor,at=new Date().toISOString()){
   const nm=typeof b.name==='string'?b.name.trim():'';assert(nm&&text(nm,100),'그룹 이름을 1~100자로 입력해 주세요.');const norm=x=>x.replace(/\s/g,''),extra=s.settings.extraGroups||[];
   assert(!s.people.some(p=>norm(p.group)===norm(nm))&&!extra.some(g=>norm(g)===norm(nm)),'이미 있는 그룹입니다: '+nm);assert(extra.length<200,'그룹이 너무 많습니다.');
   s.settings.extraGroups=[...extra,nm];if(b.category){assert(CATS.includes(b.category),'분류를 확인해 주세요.');s.settings.groupCategory={...(s.settings.groupCategory||{}),[nm]:b.category};}after={group:nm};
+ }else if(op.type==='renameGroup'){
+  const from=b.from,to=typeof b.to==='string'?b.to.trim():'',gx=g=>s.people.some(p=>p.group===g)||(s.settings.extraGroups||[]).includes(g);
+  assert(typeof from==='string'&&gx(from),'바꿀 그룹을 찾을 수 없습니다.');assert(to&&text(to,100),'새 그룹 이름을 1~100자로 입력해 주세요.');assert(to!==from,'기존과 같은 이름입니다.');
+  const exists=gx(to),moved=s.people.filter(p=>p.group===from),gc={...(s.settings.groupCategory||{})};before={from,count:moved.length,toExists:exists};
+  for(const p of moved)p.group=to;
+  s.settings.extraGroups=[...new Set((s.settings.extraGroups||[]).map(g=>g===from?to:g))];
+  if(gc[from]){if(!gc[to])gc[to]=gc[from];delete gc[from];}s.settings.groupCategory=gc;after={from,to,count:moved.length,merged:exists};
  }else if(op.type==='setGroupCategories'){
   assert(b.map&&typeof b.map==='object'&&!Array.isArray(b.map),'분류 정보를 확인해 주세요.');const ents=Object.entries(b.map);assert(ents.length>0&&ents.length<=200,'그룹을 1~200개 지정해 주세요.');
   const gx=g=>s.people.some(p=>p.group===g)||(s.settings.extraGroups||[]).includes(g),gc={...(s.settings.groupCategory||{})};before={};
