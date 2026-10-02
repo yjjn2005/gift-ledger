@@ -1,6 +1,6 @@
 // 축의금 장부 Worker — 앱 HTML 제공 + PIN 보호 API (KV 저장)
 class AppError extends Error { constructor(message,status=400){super(message);this.status=status;} }
-const emptyState=()=>({schema:1,people:[],receipts:[],expenses:[],audit:[],settings:{weddingDate:'2026-11-14',referenceAsOf:'2024-10-28',referenceSummaryIncome:null}});
+const CATS=['유태현','유재진','김희연','유해인'];const emptyState=()=>({schema:1,people:[],receipts:[],expenses:[],audit:[],settings:{weddingDate:'2026-11-14',referenceAsOf:'2024-10-28',referenceSummaryIncome:null}});
 const id=()=>crypto.randomUUID();
 const assert=(ok,msg)=>{if(!ok)throw new AppError(msg);};
 const text=(s,max=500)=>typeof s==='string'&&s.length<=max;
@@ -15,7 +15,7 @@ function validateState(s){
  for(const r of s.receipts){assert(text(r.id,100)&&r.id&&!receiptIds.has(r.id)&&ids.has(r.personId)&&validAmount(r.amount)&&validDate(r.date)&&['봉투','계좌','카드','기타'].includes(r.method)&&text(r.note??'',500),'입금 기록의 ID·명단·금액·날짜·방법을 확인해 주세요.');assert(!r.cancelled||r.cancelled===true,'입금 취소 상태를 확인해 주세요.');receiptIds.add(r.id);if(!r.cancelled)sum+=r.amount;}
  assert(Number.isSafeInteger(sum),'총액이 허용 범위를 벗어났습니다.');
  const expenseIds=new Set();for(const x of s.expenses){assert(text(x.id,100)&&x.id&&!expenseIds.has(x.id)&&['taehyun','haein'].includes(x.event)&&['plan','actual'].includes(x.kind)&&validAmount(x.amount)&&text(x.category,100)&&x.category.trim()&&(!x.date||validDate(x.date))&&(!x.cancelled||x.cancelled===true),'비용 기록을 확인해 주세요.');expenseIds.add(x.id);}
- assert(s.settings&&validDate(s.settings.weddingDate)&&validDate(s.settings.referenceAsOf)&&(s.settings.referenceSummaryIncome===null||validAmount(s.settings.referenceSummaryIncome))&&(s.settings.extraGroups===undefined||(Array.isArray(s.settings.extraGroups)&&s.settings.extraGroups.length<=200&&s.settings.extraGroups.every(g=>text(g,100)&&g.trim()))),'행사와 원본 정보를 확인해 주세요.');
+ assert(s.settings&&validDate(s.settings.weddingDate)&&validDate(s.settings.referenceAsOf)&&(s.settings.referenceSummaryIncome===null||validAmount(s.settings.referenceSummaryIncome))&&(s.settings.extraGroups===undefined||(Array.isArray(s.settings.extraGroups)&&s.settings.extraGroups.length<=200&&s.settings.extraGroups.every(g=>text(g,100)&&g.trim())))&&(s.settings.groupCategory===undefined||(s.settings.groupCategory&&typeof s.settings.groupCategory==='object'&&!Array.isArray(s.settings.groupCategory)&&Object.entries(s.settings.groupCategory).every(([k,v])=>text(k,100)&&CATS.includes(v)))),'행사와 원본 정보를 확인해 주세요.');
  for(const a of s.audit)assert(a&&text(a.operationId,100)&&a.operationId&&text(a.actor,250)&&text(a.action,100)&&text(a.at,100),'수정 이력 형식을 확인해 주세요.');
  return s;
 }
@@ -54,14 +54,22 @@ function applyOperation(state,op,actor,at=new Date().toISOString()){
  }else if(op.type==='addGroup'){
   const nm=typeof b.name==='string'?b.name.trim():'';assert(nm&&text(nm,100),'그룹 이름을 1~100자로 입력해 주세요.');const norm=x=>x.replace(/\s/g,''),extra=s.settings.extraGroups||[];
   assert(!s.people.some(p=>norm(p.group)===norm(nm))&&!extra.some(g=>norm(g)===norm(nm)),'이미 있는 그룹입니다: '+nm);assert(extra.length<200,'그룹이 너무 많습니다.');
-  s.settings.extraGroups=[...extra,nm];after={group:nm};
+  s.settings.extraGroups=[...extra,nm];if(b.category){assert(CATS.includes(b.category),'분류를 확인해 주세요.');s.settings.groupCategory={...(s.settings.groupCategory||{}),[nm]:b.category};}after={group:nm};
+ }else if(op.type==='setGroupCategories'){
+  assert(b.map&&typeof b.map==='object'&&!Array.isArray(b.map),'분류 정보를 확인해 주세요.');const ents=Object.entries(b.map);assert(ents.length>0&&ents.length<=200,'그룹을 1~200개 지정해 주세요.');
+  const gx=g=>s.people.some(p=>p.group===g)||(s.settings.extraGroups||[]).includes(g),gc={...(s.settings.groupCategory||{})};before={};
+  for(const [g,c] of ents){assert(gx(g),'없는 그룹입니다: '+g);assert(c===''||CATS.includes(c),'분류를 확인해 주세요.');before[g]=gc[g]||'';if(c==='')delete gc[g];else gc[g]=c;}
+  s.settings.groupCategory=gc;after=b.map;
+ }else if(op.type==='removeGroup'){
+  const nm=b.name,extra=s.settings.extraGroups||[];assert(typeof nm==='string'&&extra.includes(nm),'삭제할 수 있는 그룹이 아닙니다.');assert(!s.people.some(p=>p.group===nm),'명단이 있는 그룹은 삭제할 수 없습니다.');
+  s.settings.extraGroups=extra.filter(g=>g!==nm);if(s.settings.groupCategory){const gc={...s.settings.groupCategory};delete gc[nm];s.settings.groupCategory=gc;}before={group:nm};after=null;
  }else if(op.type==='addPeople'){
   assert(Array.isArray(b.names)&&b.names.length>0&&b.names.length<=300,'이름을 1~300개 입력해 주세요.');assert(text(b.group,100)&&b.group.trim(),'그룹(시트)을 선택하거나 입력해 주세요.');
   const g=b.group.trim(),inv=['sent','notSent','unknown'].includes(b.invitation)?b.invitation:'unknown',added=[],norm=x=>x.replace(/\s/g,'');
   for(const n of b.names){assert(n&&text(n.id,100)&&n.id&&!person(n.id)&&text(n.name,100)&&n.name.trim(),'이름을 확인해 주세요.');
    if(!b.allowDuplicates)assert(!s.people.some(p=>p.group===g&&norm(p.name)===norm(n.name)),'같은 그룹에 이미 있는 이름입니다: '+n.name.trim());
    const p={id:n.id,name:n.name.trim(),group:g,invitation:inv,reference:null};s.people.push(p);added.push(p);}
-  after={group:g,count:added.length,names:added.map(p=>p.name)};
+  if(CATS.includes(b.category)&&!(s.settings.groupCategory||{})[g])s.settings.groupCategory={...(s.settings.groupCategory||{}),[g]:b.category};after={group:g,count:added.length,names:added.map(p=>p.name)};
  }else throw new AppError('지원하지 않는 저장 요청입니다.');
  s.audit.push({operationId:op.id,signature,action:op.type,actor,at,reason:b.reason||'',before,after});validateState(s);return {state:s,replayed:false};
 }
