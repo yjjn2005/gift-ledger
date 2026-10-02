@@ -47,6 +47,17 @@ function applyOperation(state,op,actor,at=new Date().toISOString()){
   else Object.assign(x,{cancelled:true,cancelledAt:at,cancelledBy:actor});after=structuredClone(x);
  }else if(op.type==='setInvitation'){
   const p=person(b.personId);assert(p&&['unknown','sent','notSent'].includes(b.value),'청첩 상태를 확인해 주세요.');before={personId:p.id,value:p.invitation};p.invitation=b.value;after={personId:p.id,value:p.invitation};
+ }else if(op.type==='setGroupInvitation'){
+  assert(text(b.group,100)&&b.group.trim(),'그룹을 확인해 주세요.');assert(['sent','notSent','unknown'].includes(b.value),'청첩 상태를 확인해 주세요.');assert(text(b.reason??'',300),'메모는 300자 이내로 입력해 주세요.');
+  const members=s.people.filter(p=>p.group===b.group);assert(members.length,'해당 그룹의 명단이 없습니다.');
+  before=members.map(p=>({personId:p.id,value:p.invitation}));for(const p of members)p.invitation=b.value;after={group:b.group,value:b.value,count:members.length};
+ }else if(op.type==='addPeople'){
+  assert(Array.isArray(b.names)&&b.names.length>0&&b.names.length<=300,'이름을 1~300개 입력해 주세요.');assert(text(b.group,100)&&b.group.trim(),'그룹(시트)을 선택하거나 입력해 주세요.');
+  const g=b.group.trim(),inv=['sent','notSent','unknown'].includes(b.invitation)?b.invitation:'unknown',added=[],norm=x=>x.replace(/\s/g,'');
+  for(const n of b.names){assert(n&&text(n.id,100)&&n.id&&!person(n.id)&&text(n.name,100)&&n.name.trim(),'이름을 확인해 주세요.');
+   if(!b.allowDuplicates)assert(!s.people.some(p=>p.group===g&&norm(p.name)===norm(n.name)),'같은 그룹에 이미 있는 이름입니다: '+n.name.trim());
+   const p={id:n.id,name:n.name.trim(),group:g,invitation:inv,reference:null};s.people.push(p);added.push(p);}
+  after={group:g,count:added.length,names:added.map(p=>p.name)};
  }else throw new AppError('지원하지 않는 저장 요청입니다.');
  s.audit.push({operationId:op.id,signature,action:op.type,actor,at,reason:b.reason||'',before,after});validateState(s);return {state:s,replayed:false};
 }
