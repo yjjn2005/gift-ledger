@@ -13,8 +13,15 @@ export default {
     if (!url.pathname.startsWith('/api/')) {
       return new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } });
     }
-    if (req.headers.get('x-pin') !== env.PIN) return J({ error: 'PIN이 올바르지 않습니다. 새로고침 후 다시 입력해 주세요.' }, 401);
+    const pin = (await env.GIFT_KV.get('pin')) || env.PIN;
+    if (req.headers.get('x-pin') !== pin) return J({ error: 'PIN이 올바르지 않습니다. 새로고침 후 다시 입력해 주세요.' }, 401);
     try {
+      if (url.pathname === '/api/pin' && req.method === 'POST') {
+        const { newPin } = await req.json();
+        if (typeof newPin !== 'string' || !/^\d{4,12}$/.test(newPin)) throw new AppError('PIN은 숫자 4~12자리여야 합니다.');
+        await env.GIFT_KV.put('pin', newPin);
+        return J({ ok: true });
+      }
       if (url.pathname === '/api/state' && req.method === 'GET') {
         const cur = await load(env);
         return J({ state: cur.state, revision: cur.revision, user: USER });
