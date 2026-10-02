@@ -15,7 +15,7 @@ function validateState(s){
  for(const r of s.receipts){assert(text(r.id,100)&&r.id&&!receiptIds.has(r.id)&&ids.has(r.personId)&&validAmount(r.amount)&&validDate(r.date)&&['봉투','계좌','카드','기타'].includes(r.method)&&text(r.note??'',500),'입금 기록의 ID·명단·금액·날짜·방법을 확인해 주세요.');assert(!r.cancelled||r.cancelled===true,'입금 취소 상태를 확인해 주세요.');receiptIds.add(r.id);if(!r.cancelled)sum+=r.amount;}
  assert(Number.isSafeInteger(sum),'총액이 허용 범위를 벗어났습니다.');
  const expenseIds=new Set();for(const x of s.expenses){assert(text(x.id,100)&&x.id&&!expenseIds.has(x.id)&&['taehyun','haein'].includes(x.event)&&['plan','actual'].includes(x.kind)&&validAmount(x.amount)&&text(x.category,100)&&x.category.trim()&&(!x.date||validDate(x.date))&&(!x.cancelled||x.cancelled===true),'비용 기록을 확인해 주세요.');expenseIds.add(x.id);}
- assert(s.settings&&validDate(s.settings.weddingDate)&&validDate(s.settings.referenceAsOf)&&(s.settings.referenceSummaryIncome===null||validAmount(s.settings.referenceSummaryIncome)),'행사와 원본 정보를 확인해 주세요.');
+ assert(s.settings&&validDate(s.settings.weddingDate)&&validDate(s.settings.referenceAsOf)&&(s.settings.referenceSummaryIncome===null||validAmount(s.settings.referenceSummaryIncome))&&(s.settings.extraGroups===undefined||(Array.isArray(s.settings.extraGroups)&&s.settings.extraGroups.length<=200&&s.settings.extraGroups.every(g=>text(g,100)&&g.trim()))),'행사와 원본 정보를 확인해 주세요.');
  for(const a of s.audit)assert(a&&text(a.operationId,100)&&a.operationId&&text(a.actor,250)&&text(a.action,100)&&text(a.at,100),'수정 이력 형식을 확인해 주세요.');
  return s;
 }
@@ -51,6 +51,10 @@ function applyOperation(state,op,actor,at=new Date().toISOString()){
   assert(text(b.group,100)&&b.group.trim(),'그룹을 확인해 주세요.');assert(['sent','notSent','unknown'].includes(b.value),'청첩 상태를 확인해 주세요.');assert(text(b.reason??'',300),'메모는 300자 이내로 입력해 주세요.');
   const members=s.people.filter(p=>p.group===b.group);assert(members.length,'해당 그룹의 명단이 없습니다.');
   before=members.map(p=>({personId:p.id,value:p.invitation}));for(const p of members)p.invitation=b.value;after={group:b.group,value:b.value,count:members.length};
+ }else if(op.type==='addGroup'){
+  const nm=typeof b.name==='string'?b.name.trim():'';assert(nm&&text(nm,100),'그룹 이름을 1~100자로 입력해 주세요.');const norm=x=>x.replace(/\s/g,''),extra=s.settings.extraGroups||[];
+  assert(!s.people.some(p=>norm(p.group)===norm(nm))&&!extra.some(g=>norm(g)===norm(nm)),'이미 있는 그룹입니다: '+nm);assert(extra.length<200,'그룹이 너무 많습니다.');
+  s.settings.extraGroups=[...extra,nm];after={group:nm};
  }else if(op.type==='addPeople'){
   assert(Array.isArray(b.names)&&b.names.length>0&&b.names.length<=300,'이름을 1~300개 입력해 주세요.');assert(text(b.group,100)&&b.group.trim(),'그룹(시트)을 선택하거나 입력해 주세요.');
   const g=b.group.trim(),inv=['sent','notSent','unknown'].includes(b.invitation)?b.invitation:'unknown',added=[],norm=x=>x.replace(/\s/g,'');
