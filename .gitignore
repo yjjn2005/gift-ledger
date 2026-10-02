@@ -1,5 +1,6 @@
 private/
 offline/
+dist/
 *.xlsx
 *축의금_초기명단*.json
 가족축의금_*.json
